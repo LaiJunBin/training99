@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GAME</title>
+    <script src="./lib.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+
+        }
+
+        #cvs,
+        #game {
+            width: 100vw;
+            height: 100vh;
+        }
+
+        body {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 100vw;
+            min-height: 100vh;
+        }
+
+        #menu {
+            width: 200px;
+            height: 200px;
+            font-size: 3em;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="loading">Loading</div>
+    <button id="menu" style="display: none;" onclick="startGame()">Start</button>
+    <div id="game" style="display: none;">
+        <canvas id="cvs" width="600" height="450" style="border:1px solid #333"></canvas>
+    </div>
+
+    <script>
+        function loadResources() {
+            return Promise.all([loadImages(), loadSounds()]);
+        }
+
+        function loaded() {
+            game.resources.loaded++;
+
+            let loading = document.getElementById('loading');
+            let percent = (game.resources.loaded / game.resources.total) * 100;
+            loading.innerText = `${percent}%`;
+        }
+
+        function loadImages() {
+            let promises = [];
+            for (let image in game.resources.images) {
+                promises.push(loadImage(image));
+            }
+            return Promise.all(promises);
+        }
+
+        function loadImage(image) {
+            return new Promise(resolve => {
+                let img = new Image();
+                img.src = game.resources.images[image];
+                img.onload = function () {
+                    game.resources.images[image] = this;
+                    loaded();
+                    resolve();
+                }
+            });
+        }
+
+        function loadSounds() {
+            let promises = [];
+            for (let sound in game.resources.sounds) {
+                promises.push(loadSound(sound));
+            }
+            return Promise.all(promises);
+        }
+
+        function loadSound(sound) {
+            return fetch(game.resources.sounds[sound])
+                .then(res => res.arrayBuffer())
+                .then(async res => game.resources.sounds[sound] = await game.audio.decodeAudioData(res))
+                .then(loaded)
+        }
+
+        function initialize() {
+            game.ctx = document.getElementById('cvs').getContext('2d');
+            game.audio = new AudioContext();
+            initializeData();
+            return loadResources();
+        }
+
+        function initializeData() {
+            game.data.plane = new game.lib.Plane();
+            game.data.bulletSystem = new game.lib.BulletSystem();
+            game.data.particles = [
+                game.data.plane,
+                game.data.bulletSystem
+            ];
+            game.data.keydowns = {
+                left: false,
+                top: false,
+                right: false,
+                bottom: false,
+                space: false,
+            };
+            game.data.frame = 0;
+        }
+
+        function initializeEvents() {
+            document.addEventListener('keydown', keydown);
+            document.addEventListener('keyup', keyup);
+            document.removeEventListener('click', startGame);
+        }
+
+        function keydown(e) {
+            let code = e.keyCode;
+            let keys = { 37: 'left', 38: 'top', 39: 'right', 40: 'bottom', 32: 'space' };
+            if (game.data.keydowns[keys[code]] === false)
+                game.data.keydowns[keys[code]] = true;
+        }
+
+        function keyup(e) {
+            let code = e.keyCode;
+            let keys = { 37: 'left', 38: 'top', 39: 'right', 40: 'bottom', 32: 'space' };
+            if (game.data.keydowns[keys[code]] === true)
+                game.data.keydowns[keys[code]] = false;
+        }
+
+        function startMenu() {
+            document.getElementById('loading').style.display = 'none';
+            document.getElementById('menu').style.display = 'block';
+            document.getElementById('game').style.display = 'none';
+        }
+
+        function startGame() {
+            document.getElementById('menu').style.display = 'none';
+            document.getElementById('game').style.display = 'block';
+
+            initializeData();
+            initializeEvents();
+
+            clearInterval(game.interval);
+            game.interval = setInterval(refreshGame, 10);
+        }
+
+        function gameOver() {
+            game.ctx.drawImage(game.resources.images.explosion, game.data.plane.x - 25, game.data.plane.y - 25, 50, 50);
+
+            clearInterval(game.interval);
+            document.removeEventListener('keydown', keydown);
+            document.removeEventListener('keyup', keyup);
+            document.addEventListener('click', startGame);
+        }
+
+        function refreshGame() {
+            game.data.frame++;
+            let particles = game.data.particles;
+            for (let i = 0; i < particles.length; i++) {
+                let die = particles[i].update();
+                if (die) {
+                    particles.splice(i, 1);
+                    i--;
+                }
+            }
+
+            game.ctx.fillRect(0, 0, game.ctx.canvas.width, game.ctx.canvas.height);
+
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].render();
+            }
+
+            if (checkExplosion()) {
+                gameOver();
+            }
+        }
+
+        function checkExplosion() {
+            let bullets = game.data.bulletSystem.bullets;
+            let plane = game.data.plane;
+
+            for (let i = 0; i < bullets.length; i++) {
+                let threshold = bullets[i].r + plane.width / 2;
+                let distance = Math.sqrt(
+                    Math.pow(plane.x - bullets[i].x, 2) +
+                    Math.pow(plane.y - bullets[i].y, 2)
+                )
+                if (distance < threshold) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        initialize().then(startMenu);
+    </script>
+</body>
+
+</html>
